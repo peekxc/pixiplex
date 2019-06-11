@@ -1,0 +1,245 @@
+<!DOCTYPE html><head><meta charset="utf-8"><title>d3 webGL force graph with PIXI.js testing</title><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta name="description" content=""><meta name="theme-color" content="#000000"></head><body><button id="lasso_button" type="button">Do Lasso</button><button id="center_button" type="button">Center</button><button id="enable_force_button" type="button">Enable force</button><button id="insert_node_button" type="button">Insert node</button><button id="remove_node_button" type="button">Remove node</button><button id="insert_link_button" type="button">Insert link</button><button id="remove_link_button" type="button">Remove link</button><button id="insert_polygon_button" type="button">Insert polygon</button><button id="remove_polygon_button" type="button">Remove polygon</button><button id="change_node_color_button" type="button">Change node color</button><button id="change_node_colors_button" type="button">Change node colors</button><button id="change_node_radius_button" type="button">Change node radius</button><button id="change_node_size" type="button">Change color</button><button id="change_link_width" type="button">Change link width</button><button id="change_link_color" type="button">Change link color</button><button id="enable_weak_tree" type="button">Enable weak tree</button><button id="remove_forces" type="button">Remove forces</button><button id="add_text" type="button">Add Text </button><div id="pixir_container" style="position: relative; overflow: hidden; overflow-y: hidden; padding: 0; margin: 0; width: 1200px; height: 800px;"> </div></body><script src="pixiplex.min.js"></script><script src="https://d3js.org/d3-fetch.v1.min.js"></script><script src="https://d3js.org/d3-color.v1.min.js"></script><script src="https://d3js.org/d3-interpolate.v1.min.js"></script><script src="https://d3js.org/d3-scale-chromatic.v1.min.js"></script><script type="text/javascript">console.log(pixinet);
+const pn = pixinet;
+const pn_cont = pn.select("#pixir_container").attr('display', 'inline');
+// const width = pn_cont.style('width'), height = pn_cont.style('height');
+const width = document.getElementById("pixir_container").clientWidth;
+const height = document.getElementById("pixir_container").clientHeight;
+// Example application
+
+var view = document.createElement('canvas');
+// var view_context = view.getContext('2d');
+view.width = width; 
+view.height = height;
+var app = new PIXI.Application(width, height, { 
+	view: view,
+	antialias: true, backgroundColor: 0xffffff, 
+	resolution: devicePixelRatio, 
+	autoResize: true, 
+	forceCanvas: true,
+	autoStart: false // <- note the animation updates won't be immediate! 
+});
+console.log(app);
+document.getElementById("pixir_container").appendChild(view);
+view.onwheel = function(event){ event.preventDefault(); };
+//- document.getElementById("pixir_container").on( "scroll", function(e) {
+//- 	e.preventDefault();
+//- });
+
+// Create a viewport to handle panning, dragging, etc.
+var vp = pn.create_viewport(app, width, height);
+vp_params = {
+	clampZoom: { minWidth: width/5, maxWidth: width*5, minHeight: height/5, maxHeight: height*5 }
+}
+// Clam gets rid of panning !.clamp({ direction: 'all'})
+vp.drag().wheel(1e-12).clampZoom(vp_params.clampZoom).decelerate();		
+
+// Enable dynamic resizing
+const resize = pn.enable_resize(app, vp);
+window.addEventListener('resize', resize); 	// Listen for window resize events
+resize();
+
+// The rest of the global variables needed to be tracked
+var nodes = null, links = null, links_gfx = null, polygons = null; 
+var sim = null, sim_params = null; // the force simulation + parameters
+const ticker = pn.ticker(app, vp); // the (pixi) simulation ticker
+// pn.register_tick_stops(ticker, vp);
+
+// The default drawing method to update on each tick. Draw polygons, then links. Nodes are automatically updated.
+const default_draw = () => {
+	if (polygons) { pn.draw_polygons(polygons); }
+	if (links) { links_gfx.clear(); pn.draw_links(links, links_gfx); }
+	if (sim){ sim.tick(); }
+}
+
+d3.json("data/graph.json").then(function(graph) {
+	// Create node graphics, then stage them
+	links_gfx = pn.generate_links_graphic();
+	pn.scale_nodes(graph.nodes, width, height); // this must happen before the node graphics are generated
+	nodes = pn.generate_node_graphics(graph.nodes);
+	links = graph.links; 
+
+	// Register the dragging callbacks for the nodes
+	nodes.forEach((node) => {
+		pn.compose(pn.pixi_drag(node))(pn.drag_dispatcher(node));
+	});
+
+	// Assign actual source and target node references
+	pn.resolve_links(nodes, links);
+
+	// Add the graphics to the viewport
+	app.stage.addChild(vp);
+	pn.stage_items(vp, [links_gfx]); // add links to stage
+	pn.stage_items(vp, nodes); // add nodes to stage
+
+	// Setup ticker
+	ticker.on('tick', default_draw);
+	ticker.call('animate'); // start 
+});
+
+// Start lasso on double-click 
+let lasso_obj = pn.enable_lasso("pixir_container");
+lasso_obj.on("selected", function(nodes){
+		// Highlight selected nodes 
+		//- if (nodes) { 
+		//- 	pn.draw_nodes(nodes, { color: 0xFFA500 });
+			
+		//- 	let node_container = pn.group_items(nodes);
+		//- 	pn.stage_items(vp, [node_container]);
+		//- 	let node_group = pn.enable_drag_container(node_container);
+		//- 	console.log(node_group);
+		//- 	pn.enable_drag(node_group).on("dragging", function(coords){
+		//- 		console.log(this);
+		//- 		this.x = coords.x; this.y = coords.y; 
+		//- 		this.updateTransform();
+		//- 	});
+
+		//- 	//pn.enable_drag(node_group)
+		//- };
+		// Drag -- or -- do something else w/ selected nodes 
+		// unhighlight nodes when finished  
+});
+document.getElementById("enable_force_button").addEventListener("click", function(){
+	// Create the force simulation 
+	sim = pn.enable_force();
+	sim_params = pn.default_force_settings();
+	pn.default_force_settings(sim, app, nodes, links);
+
+	// Add force dragging emitter callbacks
+	nodes.forEach((node) => {
+		pn.compose(pn.pixi_drag(node), pn.force_drag(sim))(pn.drag_dispatcher(node));
+	});
+	sim.alpha(1); // no restart needed
+});
+
+document.getElementById("lasso_button").addEventListener("click", function(){
+	console.log("lasso clicked")
+	console.log(lasso_obj);
+	console.log(nodes);
+	lasso_obj.call("start", this, nodes);
+	// var interact_svg = pn.enable_lasso("pixir_container");
+	// var selected_nodes = pn.start_lasso(nodes, interact_svg);
+});
+document.getElementById("center_button").addEventListener("click", function(){
+	vp.moveCenter(width/2, height/2);
+	console.log(nodes);
+});
+document.getElementById("insert_node_button").addEventListener("click", function(){
+	console.log("inserting new node");
+	let new_nodes = [{id: "new_node", group: 5, x: 0.5, y: 0.5}]; 
+	let ins_nodes = pn.differenceBy(new_nodes, nodes, 'id');
+	ins_nodes = pn.generate_node_graphics(pn.scale_nodes(ins_nodes, width, height));
+	ins_nodes.forEach((node) => {
+		pn.compose(
+			pn.pixi_drag(node), 
+			sim ? pn.force_drag(sim) : pn.identity,
+			((typeof HTMLWidgets !== 'undefined') && HTMLWidgets.shinyMode) ? pn.shiny_drag(Shiny) : pn.identity
+		)(pn.drag_dispatcher(node));
+	});
+	pn.stage_items(vp, ins_nodes);
+	nodes = pn.concat(nodes, ins_nodes);
+	if (sim){ sim.nodes(nodes); }
+});
+document.getElementById("remove_node_button").addEventListener("click", function(){
+	console.log("remove new node");
+	let node_ids = [nodes[0].id, nodes[1].id]
+	pn.remove_nodes(node_ids, nodes, links, vp);
+
+	// Update simulation after any removal or addition
+	if (sim){ 
+		sim.nodes(nodes); 
+		if (sim.force('link')){	sim.force('link').links(links); }
+	}
+});
+document.getElementById("insert_link_button").addEventListener("click", function(){
+	let new_links = [{ source: "Labarre", target: "Mabeuf" }];
+	pn.resolve_links(nodes, new_links); // attach source + target
+	links = pn.concat(links, new_links);
+	if (sim && sim.force('link')){ sim.force('link').links(links); }
+});
+document.getElementById("remove_link_button").addEventListener("click", function(){
+	let links_to_remove = [{ source: "Labarre", target: "Mabeuf" }];
+	// This probably has to be O(n^2) without further sorting 
+	pn.remove(links, (link) => {
+		let tmp = links_to_remove.find((o) => { return link.source.id == o.source && link.target.id == o.target });
+		return (typeof tmp !== 'undefined')
+	});
+	if (sim && sim.force('link')){ sim.force('link').links(links); }
+});
+document.getElementById("insert_polygon_button").addEventListener("click", function(){
+	console.log("Inserting polygon");
+	let cpoly = new PIXI.Polygon();
+	cpoly.gfx = new PIXI.Graphics();
+	cpoly.nodes = [nodes[0], nodes[1], nodes[2]];
+	console.log(cpoly);
+
+	// Add to stage, update on ticker
+	pn.stage_items(vp, [cpoly.gfx]);
+	if (!polygons){ polygons = []; }
+	polygons.push(cpoly);
+});
+
+document.getElementById("remove_polygon_button").addEventListener("click", function(){
+});
+
+document.getElementById("change_node_color_button").addEventListener("click", function(){
+	let new_node_style = { color: 65280, radius: 8 };
+	let node_subset = pn.filter(nodes, (node) => { return node.id == 0 });
+	console.log(node_subset);
+	console.log(new_node_style);
+	pn.draw_nodes(node_subset, [new_node_style]);
+});
+document.getElementById("change_node_colors_button").addEventListener("click", function(){
+	const rgb_to_hex = (col) => {
+		return parseInt(d3.color(col).hex().substring(1), 16)
+	}
+	let node_colors = [];
+	nodes.forEach((node, i) => { 
+		node_colors.push({ color: rgb_to_hex(d3.interpolateSpectral(i/nodes.length)) });
+	});
+	console.log(node_colors)
+	// pn.draw_nodes(nodes, node_colors);
+	// pn.draw_nodes(nodes, { color: node_colors[0].color });
+	pn.draw_nodes(nodes, node_colors);
+});
+document.getElementById("change_node_radius_button").addEventListener("click", function(){
+	pn.draw_nodes(nodes, { radius: 2 });
+});
+document.getElementById("change_link_width").addEventListener("click", function(){
+	pn.draw_links(links, links_gfx, { lineWidth: 5 })
+});
+document.getElementById("change_link_color").addEventListener("click", function(){
+	console.log("Changing link color");
+	pn.draw_links(links, links_gfx, { color: 0xff0000 })
+});
+
+document.getElementById("enable_weak_tree").addEventListener("click", function(){
+	ticker.on("tick", function(e){
+		links_gfx.clear();
+		pn.draw_links(links, links_gfx);	
+
+		// Form weak tree by push targets downward
+		let k = 10 * sim.alpha();
+		links.forEach((link) => { 
+			link.source.y -= k;
+			link.target.y += k;  
+		});
+		sim.tick();
+	});
+});
+
+document.getElementById("add_text").addEventListener("click", function(){
+	nodes.forEach((node) => {
+		let text = new PIXI.Text('Text',{fontFamily : 'Arial', fontSize: 24, fill : 0xff1010, align : 'center'});
+		node.addChild(text);
+		//- text.position.x = function() { return node.x }
+		//- text.position.y = function() { return node.y }
+		//- vp.addChild(text);
+	});
+	console.log(nodes[0]);
+
+});
+
+			//- this.nodes.forEach((node, index) => { 
+		//- 	this.points[2*index] = node.x;
+		//- 	this.points[2*index+1] = node.y;
+		//- });</script>

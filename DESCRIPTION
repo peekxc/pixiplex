@@ -1,0 +1,15 @@
+Package: pixiplex
+Type: Package
+Title: Visualization library for simplicial complexes
+Version: 0.2
+Date: 2019-06-10
+Author: Matt Piekenbrock
+Maintainer: Matt Piekenbrock <matt.piekenbrock@gmail.com>
+Description: Provides interactive simplicial complex visualizations using WebGL primitives powered by pixi.js.
+License: MIT + file LICENSE
+LinkingTo: Rcpp
+Imports: Rcpp, htmlwidgets, magrittr
+Encoding: UTF-8
+RoxygenNote: 6.1.0
+Suggests: 
+    testthat
