@@ -1,8 +1,9 @@
 {
   "name": "pixinet",
   "version": "0.5.1",
-  "description": "PixiNet: PixiJS-powered networks",
+  "description": "pixiplex: PixiJS-powered visualizations",
   "dependencies": {
+    "axios": ">=0.18.1",
     "@babel/cli": "^7.2.3",
     "@babel/core": "^7.3.3",
     "@babel/plugin-proposal-class-properties": "^7.3.4",
